@@ -44,7 +44,7 @@ export default class EntryComponent extends LitElement {
         this._isLoading = true;
         this._loadingBranches = [];
 
-        this._branches = [ "master" ];
+        this._branches = [ "master", "4.0", "3.x", "3.5" ];
         this._branchData = {};
 
         this._selectedRepository = "godotengine/godot";
