@@ -109,6 +109,9 @@ export default class SharedNavigation extends LitElement {
                 <a href="https://godotengine.github.io/godot-prs-by-file/" target="_blank" class="nav-item">
                     PRs by File
                 </a>
+                <a href="https://godotengine.github.io/godot-interactive-changelog/" target="_blank" class="nav-item">
+                    Interactive Changelog
+                </a>
             </div>
             <div
                 class="nav-toggler"
