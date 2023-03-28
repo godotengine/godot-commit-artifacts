@@ -68,7 +68,7 @@ export default class LatestItem extends LitElement {
             font-size: 14px;
           }
 
-          :host .workflow-artifacts a {
+          :host .workflow-artifacts a.workflow-artifact-link {
             font-size: 15px;
             font-weight: 600;
           }
@@ -154,12 +154,20 @@ export default class LatestItem extends LitElement {
                                         return html`
                                             <span>
                                                 <a
+                                                    class="workflow-artifact-link"
                                                     href="/download/${this.repository}/${this.branch}/${artifact.artifact_name}"
                                                     target="_blank"
                                                 >
                                                     ${artifact.artifact_name}
                                                 </a>
-                                                <span>(${greports.format.humanizeBytes(artifact.artifact_size)})</span>
+                                                <span>
+                                                    (${greports.format.humanizeBytes(artifact.artifact_size)},
+                                                    <a
+                                                        href="https://github.com/${this.repository}/commit/${artifact.commit_hash}"
+                                                        target="_blank"
+                                                        title="Open commit #${this.hash} on GitHub"
+                                                    >#${artifact.commit_hash.substring(0, 6)}</a>)
+                                                </span>
                                             </span>
                                         `;
                                     })}
