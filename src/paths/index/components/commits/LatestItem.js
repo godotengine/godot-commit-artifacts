@@ -155,7 +155,7 @@ export default class LatestItem extends LitElement {
                                             <span>
                                                 <a
                                                     class="workflow-artifact-link"
-                                                    href="/download/${this.repository}/${this.branch}/${artifact.artifact_name}"
+                                                    href="download/${this.repository}/${this.branch}/${artifact.artifact_name}"
                                                     target="_blank"
                                                 >
                                                     ${artifact.artifact_name}
