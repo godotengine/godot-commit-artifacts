@@ -72,7 +72,7 @@ export default class IndexDescription extends LitElement {
                     active development branches.
                     <br>
                     <strong>
-                        These builds may not be suitable for production use.
+                        These builds are not designed for production use.
                         <br>
                         Please use them for testing purposes only.
                     </strong>
