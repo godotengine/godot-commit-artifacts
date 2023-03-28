@@ -1,6 +1,7 @@
 import { LitElement, html, css, customElement, property } from 'lit-element';
 
 import CommitItem from "./CommitItem";
+import LatestItem from "./LatestItem";
 
 @customElement('gr-commit-list')
 export default class CommitList extends LitElement {
@@ -57,10 +58,59 @@ export default class CommitList extends LitElement {
     @property({ type: Object }) checks = {};
     @property({ type: Object }) runs = {};
     @property({ type: Object }) artifacts = {};
+    @property({ type: Object }) latest = {};
 
     @property({ type: String }) selectedRepository = "";
     @property({ type: String }) selectedBranch = "";
     @property({ type: Boolean, reflect: true }) loading = false;
+
+    constructor() {
+        super();
+
+        this._workflowsPerCommit = {};
+    }
+
+    _updateWorkflows() {
+        this._workflowsPerCommit = {};
+
+        this.commits.forEach((item) => {
+            let workflows = [];
+
+            for (let checkId in this.checks) {
+                const check = this.checks[checkId];
+                if (item.checks.indexOf(check.check_id) < 0) {
+                    continue;
+                }
+
+                if (check.workflow === "" || typeof this.runs[check.workflow] === "undefined") {
+                    continue;
+                }
+
+                const run = this.runs[check.workflow];
+                if (run.artifacts.length === 0) {
+                    continue;
+                }
+
+                workflows.push({
+                    "name": run.name,
+                    "name_sanitized": run.name.replace(/([^a-zA-Z0-9_\- ]+)/g, "").trim().toLowerCase(),
+                    "check_id": check.check_id,
+                    "artifacts": run.artifacts,
+                });
+            }
+
+            this._workflowsPerCommit[item.hash] = workflows;
+        });
+    }
+
+    update(changedProperties) {
+        // Only recalculate when class properties change; skip for manual updates.
+        if (changedProperties.size > 0) {
+            this._updateWorkflows();
+        }
+
+        super.update(changedProperties);
+    }
 
     render(){
         if (this.selectedBranch === "") {
@@ -69,42 +119,19 @@ export default class CommitList extends LitElement {
         if (this.loading) {
             return html`
                 <span class="branch-commits-empty">Loading artifacts...</span>
-            `
+            `;
         }
 
         return html`
             <div class="branch-commits">
+                <gr-latest-item
+                    .artifacts="${this.latest}"
+                    .repository="${this.selectedRepository}"
+                    .branch="${this.selectedBranch}"
+                ></gr-latest-item>
+
                 ${this.commits.map((item) => {
-                    let workflows = [];
-
-                    for (let checkId in this.checks) {
-                        const check = this.checks[checkId];
-                        if (item.checks.indexOf(check.check_id) < 0) {
-                            continue;
-                        }
-
-                        if (check.workflow == null || typeof this.runs[check.workflow] === "undefined") {
-                            continue;
-                        }
-
-                        const run = this.runs[check.workflow];
-                        if (run.artifacts.length === 0) {
-                            continue;
-                        }
-
-                        workflows.push({
-                            "name": run.name,
-                            "name_sanitized": run.name.replace(/([^a-zA-Z0-9_\- ]+)/g, "").trim().toLowerCase(),
-                            "check_id": check.check_id,
-                            "artifacts": run.artifacts,
-                        });
-                    }
-
-                    workflows.sort((a,b) => {
-                        if (a.name_sanitized > b.name_sanitized) return 1;
-                        if (a.name_sanitized < b.name_sanitized) return -1;
-                        return 0;
-                    });
+                    const workflows = this._workflowsPerCommit[item.hash];
 
                     return html`
                         <gr-commit-item

@@ -263,33 +263,69 @@ class DataProcessor {
         this.artifacts = {};
     }
 
+    readExistingData(existingData) {
+        if (typeof existingData.commits !== "undefined") {
+            this.commits = existingData.commits;
+        }
+        if (typeof existingData.checks !== "undefined") {
+            this.checks = existingData.checks;
+        }
+        if (typeof existingData.runs !== "undefined") {
+            this.runs = existingData.runs;
+        }
+        if (typeof existingData.artifacts !== "undefined") {
+            this.artifacts = existingData.artifacts;
+        }
+    }
+
     processRuns(runsRaw) {
         try {
+            // We will be adding items to the front, so reversing is
+            // necessary.
+            runsRaw.reverse();
+
             runsRaw.forEach((item) => {
-                // Compile basic information about a commit.
-                let commit = {
-                    "hash": item.oid,
-                    "title": item.messageHeadline,
-                    "committed_date": item.committedDate,
-                    "checks": [],
-                };
+                // Check if this commit is already tracked.
+                let commit = this.commits.find((it) => {
+                    return it.hash === item.oid;
+                });
+
+                if (!commit) {
+                    // Compile basic information about a commit.
+                    commit = {
+                        "hash": item.oid,
+                        "title": item.messageHeadline,
+                        "committed_date": item.committedDate,
+                        "checks": [],
+                    };
+                    this.commits.unshift(commit);
+                }
 
                 const checkSuites = mapNodes(item.checkSuites);
                 checkSuites.forEach((checkItem) => {
-                    // Compile basic information about a check suite.
-                    let check = {
-                        "check_id": checkItem.databaseId,
-                        "check_url": checkItem.url,
-                        "status": checkItem.status,
-                        "conclusion": checkItem.conclusion,
+                    let check = this.checks[checkItem.databaseId];
 
-                        "created_at": checkItem.createdAt,
-                        "updated_at": checkItem.updatedAt,
+                    if (typeof check === "undefined") {
+                        // Compile basic information about a check suite.
+                        check = {
+                            "check_id": checkItem.databaseId,
+                            "check_url": checkItem.url,
+                            "status": checkItem.status,
+                            "conclusion": checkItem.conclusion,
 
-                        "workflow": null,
-                    };
+                            "created_at": checkItem.createdAt,
+                            "updated_at": checkItem.updatedAt,
 
-                    if (checkItem.workflowRun) {
+                            "workflow": "",
+                        };
+                        this.checks[check.check_id] = check;
+                    } else {
+                        check.status = checkItem.status;
+                        check.conclusion = checkItem.conclusion;
+                        check.updatedAt = checkItem.updatedAt;
+                    }
+
+                    if (check.workflow === "" && checkItem.workflowRun) {
                         const runItem = checkItem.workflowRun;
                         let run = {
                             "name": runItem.workflow.name,
@@ -303,16 +339,33 @@ class DataProcessor {
                         check.workflow = run.run_id;
                     }
 
-                    this.checks[check.check_id] = check;
-                    commit.checks.push(check.check_id);
-                });
 
-                this.commits.push(commit);
+                    // Existing data may contain this commit, but not all of
+                    // its checks.
+                    if (commit.checks.indexOf(check.check_id) < 0) {
+                        commit.checks.push(check.check_id);
+                    }
+                });
             });
         } catch (err) {
             console.error("    Error parsing pull request data: " + err);
             process.exitCode = ExitCodes.ParseFailure;
         }
+    }
+
+    getIncompleteRuns() {
+        let runs = [];
+
+        for (let runId in this.runs) {
+            const runData = this.runs[runId];
+            if (runData.artifacts.length > 0) {
+                continue;
+            }
+
+            runs.push(runId);
+        }
+
+        return runs;
     }
 
     processArtifacts(runId, artifactsRaw) {
@@ -334,6 +387,37 @@ class DataProcessor {
             console.error("    Error parsing artifact data: " + err);
             process.exitCode = ExitCodes.ParseFailure;
         }
+    }
+
+    getLatestArtifacts() {
+        let latest = {};
+
+        this.commits.forEach((commit) => {
+            for (let checkId of commit.checks) {
+                const check = this.checks[checkId];
+                if (check.workflow === "") {
+                    continue;
+                }
+
+                const run = this.runs[check.workflow];
+                run.artifacts.forEach((artifact) => {
+                    if (typeof latest[artifact.name] !== "undefined") {
+                        return; // Continue;
+                    }
+
+                    latest[artifact.name] = {
+                        "commit_hash": commit.hash,
+                        "check_id": check.check_id,
+                        "workflow_name": run.name,
+                        "artifact_id": artifact.id,
+                        "artifact_name": artifact.name,
+                        "artifact_size": artifact.size,
+                    };
+                });
+            }
+        });
+
+        return latest;
     }
 }
 
@@ -369,13 +453,13 @@ class DataIO {
         try {
             console.log("[*] Loading existing database from a file.");
 
-            // const dataPath = `./out/data/${this.data_owner}.${this.data_repo}.${this.data_branch}.json`;
-            // await fs.access(dataPath, fsConstants.R_OK);
-            // const existingData = await fs.readFile(dataPath);
+            const dataPath = `./out/data/${this.data_owner}.${this.data_repo}.${this.data_branch}.json`;
+            await fs.access(dataPath, fsConstants.R_OK);
+            const fileRaw = await fs.readFile(dataPath, {encoding: "utf-8"});
+
+            return JSON.parse(fileRaw);
         } catch (err) {
-            console.error("    Error loading existing database file: " + err);
-            process.exitCode = ExitCodes.IOFailure;
-            return;
+            return {};
         }
     }
 
@@ -390,6 +474,48 @@ class DataIO {
             console.error("    Error saving database file: " + err);
             process.exitCode = ExitCodes.IOFailure;
             return;
+        }
+    }
+
+    async createRedirects(artifacts) {
+        let redirectTemplate = "";
+
+        try {
+            const dataPath = `./build/res/redirect_index.html`;
+            await fs.access(dataPath, fsConstants.R_OK);
+            redirectTemplate = await fs.readFile(dataPath, {encoding: "utf-8"});
+
+            if (redirectTemplate === "") {
+                throw new Error("File is missing.");
+            }
+        } catch (err) {
+            console.error("    Error loading a redirect template: " + err);
+            process.exitCode = ExitCodes.IOFailure;
+            return;
+        }
+
+        await ensureDir("./out");
+        await ensureDir("./out/download");
+        await ensureDir(`./out/download/${this.data_owner}`);
+        await ensureDir(`./out/download/${this.data_owner}/${this.data_repo}`);
+        await ensureDir(`./out/download/${this.data_owner}/${this.data_repo}/${this.data_branch}`);
+
+        const outputDir = `./out/download/${this.data_owner}/${this.data_repo}/${this.data_branch}`;
+        for (let artifactName in artifacts) {
+            await ensureDir(`${outputDir}/${artifactName}`);
+
+            try {
+                const artifact = artifacts[artifactName];
+                const artifactPath = `https://github.com/godotengine/godot/suites/${artifact.check_id}/artifacts/${artifact.artifact_id}`;
+
+                const redirectPage = redirectTemplate.replace(/\{\{REDIRECT_PATH\}\}/g, artifactPath);
+                await fs.writeFile(`${outputDir}/${artifactName}/index.html`, redirectPage, {encoding: "utf-8"});
+                console.log(`    Created a redirect at ${outputDir}/${artifactName}.`)
+            } catch (err) {
+                console.error(`    Error saving a redirect page for "${artifactName}": ` + err);
+                process.exitCode = ExitCodes.IOFailure;
+                return;
+            }
         }
     }
 }
@@ -455,13 +581,13 @@ async function main() {
     dataIO.parseArgs();
     checkForExit();
 
-    // await dataIO.loadConfig();
-    // checkForExit();
-
     console.log(`[*] Configured for the "${dataIO.data_owner}/${dataIO.data_repo}" repository; branch ${dataIO.data_branch}.`);
 
     const dataFetcher = new DataFetcher(dataIO.data_owner, dataIO.data_repo);
     const dataProcessor = new DataProcessor();
+
+    const existingData = await dataIO.loadData();
+    dataProcessor.readExistingData(existingData);
 
     console.log("[*] Checking the rate limits before.");
     await dataFetcher.checkRates();
@@ -474,7 +600,7 @@ async function main() {
     checkForExit();
 
     console.log("[*] Fetching artifact data from GitHub.");
-    for (let runId in dataProcessor.runs) {
+    for (let runId of dataProcessor.getIncompleteRuns()) {
         const artifactsRaw = await dataFetcher.fetchArtifacts(runId);
         checkForExit();
         dataProcessor.processArtifacts(runId, artifactsRaw);
@@ -489,6 +615,8 @@ async function main() {
     await dataFetcher.checkRates();
     checkForExit();
 
+    const latestArtifacts = dataProcessor.getLatestArtifacts();
+
     console.log("[*] Finalizing database.")
     const output = {
         "generated_at": Date.now(),
@@ -496,9 +624,14 @@ async function main() {
         "checks": dataProcessor.checks,
         "runs": dataProcessor.runs,
         "artifacts": dataProcessor.artifacts,
+        "latest": latestArtifacts,
     };
 
     await dataIO.saveData(output, `${dataIO.data_owner}.${dataIO.data_repo}.${dataIO.data_branch}.json`);
+    checkForExit();
+
+    console.log("[*] Creating stable download paths.");
+    await dataIO.createRedirects(latestArtifacts);
     checkForExit();
 
     console.log("[*] Database built.");

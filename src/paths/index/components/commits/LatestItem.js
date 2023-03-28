@@ -1,7 +1,7 @@
 import { LitElement, html, css, customElement, property } from 'lit-element';
 
-@customElement('gr-commit-item')
-export default class CommitItem extends LitElement {
+@customElement('gr-latest-item')
+export default class LatestItem extends LitElement {
     static get styles() {
         return css`
           /** Colors and variables **/
@@ -91,35 +91,61 @@ export default class CommitItem extends LitElement {
         `;
     }
 
-    @property({ type: String, reflect: true }) hash = '';
-    @property({ type: String }) title = '';
-    @property({ type: Array }) workflows = [];
+    @property({ type: Object }) artifacts = {};
 
     @property({ type: String }) repository = '';
+    @property({ type: String }) branch = '';
 
-    render(){
-        const [...workflows] = this.workflows;
-        workflows.sort((a,b) => {
+    constructor() {
+        super();
+
+        this._latestByWorkflow = [];
+    }
+
+    _updateWorkflows() {
+        this._latestByWorkflow = [];
+        const existingWorkflow = {};
+
+        for (let artifactName in this.artifacts) {
+            const artifact = this.artifacts[artifactName];
+
+            if (typeof existingWorkflow[artifact.workflow_name] === "undefined") {
+                existingWorkflow[artifact.workflow_name] = {
+                    "name": artifact.workflow_name,
+                    "name_sanitized": artifact.workflow_name.replace(/([^a-zA-Z0-9_\- ]+)/g, "").trim().toLowerCase(),
+                    "artifacts": [],
+                };
+                this._latestByWorkflow.push(existingWorkflow[artifact.workflow_name]);
+            }
+
+            existingWorkflow[artifact.workflow_name].artifacts.push(artifact);
+        }
+
+        this._latestByWorkflow.sort((a,b) => {
             if (a.name_sanitized > b.name_sanitized) return 1;
             if (a.name_sanitized < b.name_sanitized) return -1;
             return 0;
         });
+    }
 
+    update(changedProperties) {
+        // Only recalculate when class properties change; skip for manual updates.
+        if (changedProperties.size > 0) {
+            this._updateWorkflows();
+        }
+
+        super.update(changedProperties);
+    }
+
+    render(){
         return html`
             <div class="item-container">
                 <div class="item-title">
-                    <span>${greports.format.formatTimestamp(this.committed_date)}</span>
-                    <a
-                        href="https://github.com/${this.repository}/commit/${this.hash}"
-                        target="_blank"
-                        title="Open commit #${this.hash} on GitHub"
-                    >
-                        #${this.hash.substring(0, 9)}
-                    </a>
+                    <span>Latest</span>
                 </div>
-                <div class="item-subtitle">${this.title}</div>
+                <div class="item-subtitle">Builds may be from different runs, depending on their availability.</div>
                 <div class="item-workflows">
-                    ${workflows.map((item) => {
+                    ${this._latestByWorkflow.map((item) => {
                         return html`
                             <div class="workflow">
                                 <div class="workflow-name">${item.name}</div>
@@ -128,12 +154,12 @@ export default class CommitItem extends LitElement {
                                         return html`
                                             <span>
                                                 <a
-                                                    href="https://github.com/godotengine/godot/suites/${item.check_id}/artifacts/${artifact.id}"
+                                                    href="/download/${this.repository}/${this.branch}/${artifact.artifact_name}"
                                                     target="_blank"
                                                 >
-                                                    ${artifact.name}
+                                                    ${artifact.artifact_name}
                                                 </a>
-                                                <span>(${greports.format.humanizeBytes(artifact.size)})</span>
+                                                <span>(${greports.format.humanizeBytes(artifact.artifact_size)})</span>
                                             </span>
                                         `;
                                     })}

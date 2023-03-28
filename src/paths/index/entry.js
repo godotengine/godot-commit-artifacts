@@ -120,6 +120,7 @@ export default class EntryComponent extends LitElement {
         let checks = {};
         let runs = {};
         let artifacts = {};
+        let latest = {};
 
         if (this._selectedBranch !== "" && typeof this._branchData[this._selectedBranch] !== "undefined") {
             const branchData = this._branchData[this._selectedBranch];
@@ -128,6 +129,7 @@ export default class EntryComponent extends LitElement {
             checks = branchData.checks;
             runs = branchData.runs;
             artifacts = branchData.artifacts;
+            latest = branchData.latest;
         }
 
         return html`
@@ -153,6 +155,7 @@ export default class EntryComponent extends LitElement {
                                 .checks="${checks}"
                                 .runs="${runs}"
                                 .artifacts="${artifacts}"
+                                .latest="${latest}"
 
                                 .selectedRepository="${this._selectedRepository}"
                                 .selectedBranch="${this._selectedBranch}"
