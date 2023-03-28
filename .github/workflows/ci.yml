@@ -23,8 +23,9 @@ jobs:
 
     - name: Checkout published data
       uses: actions/checkout@v3
-      ref: gh-pages
-      path: out
+      with:
+        ref: gh-pages
+        path: out
 
     - name: Install Node.js 16.x
       uses: actions/setup-node@v3
