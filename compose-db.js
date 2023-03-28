@@ -260,7 +260,6 @@ class DataProcessor {
         this.commits = [];
         this.checks = {};
         this.runs = {};
-        this.artifacts = {};
     }
 
     readExistingData(existingData) {
@@ -273,8 +272,54 @@ class DataProcessor {
         if (typeof existingData.runs !== "undefined") {
             this.runs = existingData.runs;
         }
-        if (typeof existingData.artifacts !== "undefined") {
-            this.artifacts = existingData.artifacts;
+    }
+
+    reduceData() {
+        // The goal is to display only the most recent commits and their artifacts.
+        // However, we can't just always fetch the last N commits and be done with
+        // it. Fetched commits can still be in progress, and we want to have at least
+        // some version available.
+
+        // Note that artifacts expire, so it is still possible to have none. But we
+        // should at least try.
+
+        const MAX_COMMITS = 20;
+
+        // Determine which commits are the latest available with ready builds.
+        const latestArtifacts = this.getLatestArtifacts();
+        const latestCommits = [];
+        for (let artifactName in latestArtifacts) {
+            const artifactCommit = latestArtifacts[artifactName].commit_hash;
+            if (latestCommits.indexOf(artifactCommit) < 0) {
+                latestCommits.push(artifactCommit);
+            }
+        }
+
+        for (let i = 0; i < this.commits.length; i++) {
+            const commit = this.commits[i];
+            const commitIndex = latestCommits.indexOf(commit.hash);
+            if (commitIndex >= 0) {
+                latestCommits.splice(commitIndex, 1);
+            }
+
+            // We want to have at least MAX_COMMITS commits; and we also want to
+            // hit every commit contributing to the latest artifacts.
+            if (i < MAX_COMMITS || latestCommits.length > 0) {
+                continue;
+            }
+
+            // But beyond that, cut it all out.
+            console.log(`    Removed extra commit ${commit.hash}.`);
+
+            this.commits.splice(i, 1);
+            for (let checkId of commit.checks) {
+                const check = this.checks[checkId];
+                delete this.checks[checkId];
+
+                if (check.workflow !== "") {
+                    delete this.runs[check.workflow];
+                }
+            }
         }
     }
 
@@ -322,7 +367,7 @@ class DataProcessor {
                     } else {
                         check.status = checkItem.status;
                         check.conclusion = checkItem.conclusion;
-                        check.updatedAt = checkItem.updatedAt;
+                        check.updated_at = checkItem.updatedAt;
                     }
 
                     if (check.workflow === "" && checkItem.workflowRun) {
@@ -611,10 +656,12 @@ async function main() {
         await dataFetcher.delay(API_DELAY_MSEC);
     }
 
-    console.log("[*] Checking the rate limits after.")
+    console.log("[*] Checking the rate limits after.");
     await dataFetcher.checkRates();
     checkForExit();
 
+    console.log("[*] Reducing database.");
+    dataProcessor.reduceData();
     const latestArtifacts = dataProcessor.getLatestArtifacts();
 
     console.log("[*] Finalizing database.")
@@ -623,7 +670,6 @@ async function main() {
         "commits": dataProcessor.commits,
         "checks": dataProcessor.checks,
         "runs": dataProcessor.runs,
-        "artifacts": dataProcessor.artifacts,
         "latest": latestArtifacts,
     };
 

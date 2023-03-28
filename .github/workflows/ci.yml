@@ -21,6 +21,11 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Checkout published data
+      uses: actions/checkout@v3
+      ref: gh-pages
+      path: out
+
     - name: Install Node.js 16.x
       uses: actions/setup-node@v3
       with:
@@ -35,6 +40,24 @@ jobs:
 
     - name: Fetch artifact data (master)
       run: npm run compose-db -- branch:master
+      env:
+        GRAPHQL_TOKEN: ${{ secrets.GRAPHQL_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Fetch artifact data (4.0)
+      run: npm run compose-db -- branch:4.0
+      env:
+        GRAPHQL_TOKEN: ${{ secrets.GRAPHQL_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Fetch artifact data (3.x)
+      run: npm run compose-db -- branch:3.x
+      env:
+        GRAPHQL_TOKEN: ${{ secrets.GRAPHQL_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Fetch artifact data (3.5)
+      run: npm run compose-db -- branch:3.5
       env:
         GRAPHQL_TOKEN: ${{ secrets.GRAPHQL_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
